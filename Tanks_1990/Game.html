@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Танчики 1990 — TV Edition</title>
+<style>
+  body {
+    margin: 0; background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; font-family: monospace; color: #fff;
+    overflow: hidden;
+  }
+  canvas { border: 4px solid #555; image-rendering: pixelated; background: #000; }
+  #hud { margin-top: 10px; font-size: 13px; color: #aaa; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<canvas id="game" width="416" height="416"></canvas>
+<div id="hud">
+  Пульт Vidaa: <b>OK</b> — выстрел / старт · <b>Play/Pause</b> — пауза · <b>Stop</b> — рестарт<br>
+  Клавиатура: Стрелки/WASD — движение · Пробел — выстрел · P — пауза · R — рестарт
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ===== Константы =====
+const TILE = 16, COLS = 26, ROWS = 26;
+const TANK = 28, BULLET = 6;
+const EMPTY = 0, BRICK = 1, STEEL = 2, WATER = 3, TREE = 4, ICE = 5, BASE = 6;
+const BASE_WALLS = [[11,24],[13,24],[11,23],[12,23],[13,23]];
+
+// ===== Аудио =====
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){}
+  }
+}
+function beep(freq, dur, type='square', vol=0.04) {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function noiseBurst(dur, vol=0.1) {
+  if (!audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * (1 - i/n);
+  const src = audioCtx.createBufferSource(), g = audioCtx.createGain();
+  g.gain.value = vol;
+  src.buffer = buf; src.connect(g); g.connect(audioCtx.destination);
+  src.start();
+}
+
+// ===== Сид-генерация =====
+function seedForLevel(level) { return level; }
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ===== Генерация уровня =====
+function generateLevel(level) {
+  const rng = mulberry32(seedForLevel(level));
+  const m = [];
+  for (let y = 0; y < ROWS; y++) m.push(new Array(COLS).fill(EMPTY));
+
+  for (let x = 0; x < COLS; x++) { m[0][x] = STEEL; m[ROWS-1][x] = STEEL; }
+  for (let y = 0; y < ROWS; y++) { m[y][0] = STEEL; m[y][COLS-1] = STEEL; }
+
+  const structures = 12 + Math.min(level * 2, 15);
+  for (let s = 0; s < structures; s++) {
+    const r = rng();
+    let tileType, maxW, maxH;
+    if (r < 0.55)      { tileType = BRICK; maxW = 3; maxH = 3; }
+    else if (r < 0.78) { tileType = WATER; maxW = 2; maxH = 2; }
+    else                { tileType = TREE;  maxW = 2; maxH = 2; }
+
+    const w = 1 + Math.floor(rng() * maxW);
+    const h = 1 + Math.floor(rng() * maxH);
+    const x = 1 + Math.floor(rng() * 10);
+    const y = 2 + Math.floor(rng() * 20);
+
+    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) {
+      const px = x + i, py = y + j;
+      if (px < 1 || px > 11 || py < 1 || py > 23) continue;
+      if (m[py][px] !== EMPTY) continue;
+      m[py][px] = tileType;
+    }
+  }
+
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 1; x <= 11; x++) m[y][25 - x] = m[y][x];
+  }
+
+  if (rng() < 0.35) {
+    const numIce = 2 + Math.floor(rng() * 4);
+    for (let i = 0; i < numIce; i++) {
+      const x = 1 + Math.floor(rng() * 11);
+      const y = 1 + Math.floor(rng() * 22);
+      if (m[y][x] === EMPTY) { m[y][x] = ICE; m[y][25-x] = ICE; }
+    }
+  }
+
+  function clearRect(x, y, w, h) {
+    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) {
+      const px = x+i, py = y+j;
+      if (px > 0 && px < COLS-1 && py > 0 && py < ROWS-1) m[py][px] = EMPTY;
+    }
+  }
+
+  clearRect(7, 21, 5, 4);
+  clearRect(1, 1, 2, 2);
+  clearRect(12, 1, 2, 2);
+  clearRect(23, 1, 2, 2);
+  clearRect(10, 22, 5, 3);
+
+  m[24][12] = BASE;
+  for (const [x, y] of BASE_WALLS) m[y][x] = BRICK;
+
+  return m;
+}
+
+// ===== Состояние =====
+let levelMap, player, enemies, bullets, bonuses, particles;
+let score, gameState, currentLevel;
+let spawnTimer, enemiesLeft, enemyCounter;
+let baseWallTimer, freezeTimer, frameCounter, playerFrozenTimer;
+
+// ===== Управление (клавиатура + пульт Vidaa) =====
+const keys = {};
+
+// Коды пульта Vidaa:
+// OK / Enter      = 13
+// Play / Pause    = 415 или 19
+// Stop            = 413
+// Back            = 8, 27, 10009
+const TV_OK = 13;
+const TV_PLAY_PAUSE = [415, 19];
+const TV_STOP = 413;
+const TV_BACK = [8, 27, 10009];
+
+window.addEventListener('keydown', e => {
+  if (!audioCtx) initAudio();
+  const code = e.keyCode;
+
+  // Всегда блокируем стандартное поведение ТВ для игровых кнопок
+  if ([37,38,39,40,32,13,415,19,413,8,27,10009].includes(code)) {
+    e.preventDefault();
+  }
+  if (e.repeat) return;
+
+  // ---- Логика состояний ----
+
+  // OK / Enter — универсальное действие: старт, выстрел, продолжение
+  if (code === TV_OK) {
+    if (gameState === 'menu') { startLevel(currentLevel); return; }
+    if (gameState === 'levelComplete') { currentLevel++; startLevel(currentLevel); return; }
+    if (gameState === 'gameOver') { newGame(); return; }
+    if (gameState === 'playing') { keys['Space'] = true; return; }
+  }
+
+  // Play / Pause — пауза
+  if (TV_PLAY_PAUSE.includes(code)) {
+    if (gameState === 'playing') gameState = 'paused';
+    else if (gameState === 'paused') gameState = 'playing';
+    return;
+  }
+
+  // Stop — рестарт
+  if (code === TV_STOP) {
+    newGame();
+    return;
+  }
+
+  // Back — также можно использовать как паузу (чтобы случайно не закрыть браузер)
+  if (TV_BACK.includes(code)) {
+    if (gameState === 'playing') gameState = 'paused';
+    else if (gameState === 'paused') gameState = 'playing';
+    return;
+  }
+
+  // ---- Клавиатурные сокращения (для отладки на ПК) ----
+  if (code === 32) { // Space
+    if (gameState === 'menu') { startLevel(currentLevel); return; }
+    if (gameState === 'levelComplete') { currentLevel++; startLevel(currentLevel); return; }
+    if (gameState === 'playing') { keys['Space'] = true; return; }
+    if (gameState === 'gameOver') { newGame(); return; }
+  }
+  if (code === 80) { // P
+    if (gameState === 'playing') gameState = 'paused';
+    else if (gameState === 'paused') gameState = 'playing';
+    return;
+  }
+  if (code === 82) { // R
+    newGame();
+    return;
+  }
+
+  keys[code] = true;
+});
+
+window.addEventListener('keyup', e => { keys[e.keyCode] = false; });
+
+// ===== Запуск уровня =====
+function prepareLevel(level) {
+  levelMap = generateLevel(level);
+  player.x = 8*TILE; player.y = 22*TILE;
+  player.dir = 0; player.alive = true;
+  player.cooldown = 0; player.invulnTimer = 90;
+  enemies = []; bullets = []; bonuses = []; particles = [];
+  spawnTimer = 30;
+  enemiesLeft = 4 + level;
+  enemyCounter = 0;
+  baseWallTimer = 0; freezeTimer = 0; playerFrozenTimer = 0;
+}
+
+function startLevel(level) {
+  prepareLevel(level);
+  gameState = 'playing';
+  for (const k in keys) keys[k] = false;
+}
+
+function newGame() {
+  currentLevel = 1;
+  score = 0;
+  player = {
+    x: 8*TILE, y: 22*TILE, dir: 0, speed: 2,
+    cooldown: 0, alive: true, lives: 3,
+    power: 1, canSwim: false, invulnTimer: 60, isPlayer: true
+  };
+  prepareLevel(1);
+  gameState = 'menu';
+}
+
+// ===== Коллизии =====
+function rectHitsMap(x, y, w, h, passWater) {
+  const x1 = Math.floor(x / TILE), y1 = Math.floor(y / TILE);
+  const x2 = Math.floor((x + w - 1) / TILE), y2 = Math.floor((y + h - 1) / TILE);
+  for (let ty = y1; ty <= y2; ty++) {
+    for (let tx = x1; tx <= x2; tx++) {
+      if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return true;
+      const t = levelMap[ty][tx];
+      if (t === BRICK || t === STEEL || t === BASE) return true;
+      if (t === WATER && !passWater) return true;
+    }
+  }
+  return false;
+}
+
+function moveTank(tank, dx, dy) {
+  const nx = tank.x + dx, ny = tank.y + dy;
+  if (!rectHitsMap(nx, ny, TANK, TANK, tank.canSwim === true)) {
+    if (nx >= TILE && nx + TANK <= canvas.width - TILE &&
+        ny >= TILE && ny + TANK <= canvas.height - TILE) {
+      tank.x = nx; tank.y = ny; return true;
+    }
+  }
+  return false;
+}
+
+// ===== Стрельба =====
+function shoot(tank) {
+  if (tank.cooldown > 0) return;
+  if (tank.isPlayer) {
+    const maxB = tank.power >= 3 ? 2 : 1;
+    if (bullets.filter(b => b.owner === tank).length >= maxB) return;
+    tank.cooldown = tank.power >= 2 ? 8 : 18;
+  } else tank.cooldown = tank.fastFire ? 15 : 45;
+
+  const cx = tank.x + TANK/2 - BULLET/2;
+  const cy = tank.y + TANK/2 - BULLET/2;
+  let bx = cx, by = cy, vx = 0, vy = 0;
+  const sp = 5;
+  if (tank.dir === 0) { by = tank.y - BULLET; vy = -sp; }
+  else if (tank.dir === 1) { bx = tank.x + TANK; vx = sp; }
+  else if (tank.dir === 2) { by = tank.y + TANK; vy = sp; }
+  else if (tank.dir === 3) { bx = tank.x - BULLET; vx = -sp; }
+  const dmg = (tank.isPlayer && tank.power >= 4) ? 2 : 1;
+  bullets.push({ x: bx, y: by, vx, vy, owner: tank, isPlayer: !!tank.isPlayer, power: dmg });
+  beep(tank.isPlayer ? 660 : 330, 0.05, 'square', 0.03);
+}
+
+function explode(x, y) {
+  for (let i = 0; i < 10; i++) {
+    particles.push({
+      x, y, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+      life: 15 + Math.random()*15, maxLife: 30,
+      color: Math.random() < 0.5 ? '#ff0' : '#f80'
+    });
+  }
+  noiseBurst(0.15, 0.08);
+}
+
+// ===== Бонусы =====
+const BONUS_TYPES = ['star','grenade','clock','shovel','tank','ship','gun'];
+
+function spawnBonus(x, y) {
+  const type = BONUS_TYPES[Math.floor(Math.random()*BONUS_TYPES.length)];
+  bonuses.push({ x: x + TANK/2, y: y + TANK/2, type, timer: 720, blink: 0 });
+  beep(1200, 0.08, 'sine', 0.06);
+}
+
+function applyBonus(p, type) {
+  switch(type) {
+    case 'star': if (p.power < 4) p.power++; break;
+    case 'grenade':
+      for (const e of enemies) if (e.alive) {
+        e.alive = false;
+        explode(e.x + TANK/2, e.y + TANK/2);
+        score += e.maxHp === 3 ? 300 : (e.maxHp === 2 ? 200 : 100);
+      }
+      break;
+    case 'clock': freezeTimer = 480; break;
+    case 'shovel':
+      baseWallTimer = 600;
+      for (const [x,y] of BASE_WALLS) levelMap[y][x] = STEEL;
+      break;
+    case 'tank': p.lives++; break;
+    case 'ship': p.canSwim = true; break;
+    case 'gun': p.power = 4; break;
+  }
+  beep(880, 0.1, 'sine', 0.08);
+  beep(1320, 0.1, 'sine', 0.06);
+}
+
+function applyBonusEnemy(e, type) {
+  switch(type) {
+    case 'star': e.fastFire = true; break;
+    case 'grenade':
+      if (player.alive) {
+        player.alive = false;
+        explode(player.x + TANK/2, player.y + TANK/2);
+        player.lives--; handlePlayerDeath();
+      }
+      break;
+    case 'clock': playerFrozenTimer = 120; break;
+    case 'shovel':
+      for (const [x,y] of BASE_WALLS) if (levelMap[y][x] === STEEL) levelMap[y][x] = BRICK;
+      baseWallTimer = 0; break;
+    case 'tank': e.hp++; e.maxHp++; break;
+    case 'ship': e.canSwim = true; break;
+    case 'gun': e.power = 2; break;
+  }
+  beep(220, 0.15, 'sawtooth', 0.05);
+}
+
+// ===== Спавн врагов =====
+function spawnEnemy() {
+  if (enemiesLeft <= 0) return;
+  if (enemies.filter(e => e.alive).length >= 4) return;
+  const spawnPoints = [
+    {x: TILE, y: TILE},
+    {x: 12*TILE, y: TILE},
+    {x: 23*TILE, y: TILE}
+  ];
+  const p = spawnPoints[Math.floor(Math.random()*spawnPoints.length)];
+  for (const e of enemies) if (e.alive && Math.abs(e.x - p.x) < TANK && Math.abs(e.y - p.y) < TANK) return;
+  if (Math.abs(player.x - p.x) < TANK && Math.abs(player.y - p.y) < TANK) return;
+
+  enemyCounter++;
+  const typeR = Math.random();
+  const type = typeR < 0.3 ? 2 : (typeR < 0.6 ? 1 : 0);
+  const isBonus = enemyCounter % 4 === 0;
+  const speedBonus = Math.min((currentLevel - 1) * 0.05, 0.4);
+  enemies.push({
+    x: p.x, y: p.y, dir: 2, cooldown: 30, alive: true, isPlayer: false,
+    speed: (type === 1 ? 1.6 : (type === 2 ? 1.0 : 1.2)) + speedBonus,
+    hp: type === 2 ? 3 : 1, maxHp: type === 2 ? 3 : 1,
+    changeTimer: 0, isBonus, fastFire: false, power: 1, canSwim: false,
+    color: type === 2 ? '#aaa' : (type === 1 ? '#6cf' : '#ccc')
+  });
+  enemiesLeft--;
+}
+
+function handlePlayerDeath() {
+  if (player.lives > 0 && gameState === 'playing') {
+    setTimeout(() => {
+      if (gameState !== 'playing') return;
+      player.x = 8*TILE; player.y = 22*TILE;
+      player.dir = 0; player.alive = true;
+      player.power = 1; player.canSwim = false;
+      player.invulnTimer = 90;
+    }, 700);
+  } else if (player.lives <= 0) {
+    gameState = 'gameOver';
+  }
+}
+
+// ===== Update =====
+function update() {
+  frameCounter++;
+  if (gameState !== 'playing') return;
+
+  if (baseWallTimer > 0) {
+    baseWallTimer--;
+    if (baseWallTimer === 0)
+      for (const [x,y] of BASE_WALLS) if (levelMap[y][x] === STEEL) levelMap[y][x] = BRICK;
+  }
+  if (freezeTimer > 0) freezeTimer--;
+  if (playerFrozenTimer > 0) playerFrozenTimer--;
+  if (player.invulnTimer > 0) player.invulnTimer--;
+
+  if (player.alive && playerFrozenTimer <= 0) {
+    let dx = 0, dy = 0;
+    if (keys[38] || keys[87]) { player.dir = 0; dy = -player.speed; }      // Up / W
+    else if (keys[40] || keys[83]) { player.dir = 2; dy = player.speed; } // Down / S
+    else if (keys[37] || keys[65]) { player.dir = 3; dx = -player.speed; } // Left / A
+    else if (keys[39] || keys[68]) { player.dir = 1; dx = player.speed; }  // Right / D
+    if (dx || dy) moveTank(player, dx, dy);
+    if (keys['Space']) shoot(player);
+  }
+  if (player.cooldown > 0) player.cooldown--;
+
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.cooldown > 0) e.cooldown--;
+    if (freezeTimer > 0) continue;
+    e.changeTimer--;
+    if (e.changeTimer <= 0) {
+      e.changeTimer = 40 + Math.random()*60;
+      const r = Math.random();
+      if (r < 0.4 && player.alive) {
+        if (Math.abs(player.x - e.x) > Math.abs(player.y - e.y)) e.dir = player.x > e.x ? 1 : 3;
+        else e.dir = player.y > e.y ? 2 : 0;
+      } else if (r < 0.6) {
+        const bx = 12*TILE, by = 24*TILE;
+        if (Math.abs(bx - e.x) > Math.abs(by - e.y)) e.dir = bx > e.x ? 1 : 3;
+        else e.dir = by > e.y ? 2 : 0;
+      } else e.dir = Math.floor(Math.random()*4);
+    }
+    let dx = 0, dy = 0;
+    if (e.dir === 0) dy = -e.speed;
+    if (e.dir === 1) dx = e.speed;
+    if (e.dir === 2) dy = e.speed;
+    if (e.dir === 3) dx = -e.speed;
+    if (!moveTank(e, dx, dy)) e.changeTimer = 0;
+    if (Math.random() < 0.02 && e.cooldown <= 0) shoot(e);
+  }
+
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    if (b.x < 0 || b.y < 0 || b.x > canvas.width || b.y > canvas.height) {
+      bullets.splice(i, 1); continue;
+    }
+    const tx = Math.floor((b.x + BULLET/2) / TILE);
+    const ty = Math.floor((b.y + BULLET/2) / TILE);
+    if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) {
+      const t = levelMap[ty][tx];
+      if (t === BRICK) { levelMap[ty][tx] = EMPTY; explode(b.x, b.y); bullets.splice(i, 1); continue; }
+      else if (t === STEEL) {
+        if (b.power >= 2) levelMap[ty][tx] = EMPTY;
+        explode(b.x, b.y); bullets.splice(i, 1); continue;
+      } else if (t === BASE) { explode(b.x, b.y); gameState = 'gameOver'; bullets.splice(i, 1); continue; }
+    }
+    let hit = false;
+    if (b.isPlayer) {
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (b.x + BULLET > e.x && b.x < e.x + TANK &&
+            b.y + BULLET > e.y && b.y < e.y + TANK) {
+          e.hp -= b.power;
+          explode(b.x, b.y);
+          if (e.hp <= 0) {
+            e.alive = false;
+            explode(e.x + TANK/2, e.y + TANK/2);
+            score += e.maxHp === 3 ? 300 : (e.maxHp === 2 ? 200 : 100);
+            if (e.isBonus) spawnBonus(e.x, e.y);
+          }
+          hit = true; break;
+        }
+      }
+    } else {
+      if (player.alive && player.invulnTimer <= 0 &&
+          b.x + BULLET > player.x && b.x < player.x + TANK &&
+          b.y + BULLET > player.y && b.y < player.y + TANK) {
+        player.alive = false;
+        explode(player.x + TANK/2, player.y + TANK/2);
+        player.lives--; hit = true;
+        handlePlayerDeath();
+      }
+    }
+    if (!hit && b.isPlayer) {
+      for (let j = bullets.length - 1; j >= 0; j--) {
+        const ob = bullets[j];
+        if (ob === b || ob.isPlayer) continue;
+        if (b.x + BULLET > ob.x && b.x < ob.x + BULLET &&
+            b.y + BULLET > ob.y && b.y < ob.y + BULLET) {
+          bullets.splice(j, 1); hit = true; break;
+        }
+      }
+    }
+    if (hit) bullets.splice(i, 1);
+  }
+
+  for (let i = bonuses.length - 1; i >= 0; i--) {
+    const b = bonuses[i];
+    b.timer--; b.blink++;
+    if (b.timer <= 0) { bonuses.splice(i, 1); continue; }
+    if (player.alive && Math.abs(b.x - (player.x + TANK/2)) < TANK &&
+        Math.abs(b.y - (player.y + TANK/2)) < TANK) {
+      applyBonus(player, b.type); bonuses.splice(i, 1); continue;
+    }
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (Math.abs(b.x - (e.x + TANK/2)) < TANK &&
+          Math.abs(b.y - (e.y + TANK/2)) < TANK) {
+        applyBonusEnemy(e, b.type); bonuses.splice(i, 1); break;
+      }
+    }
+  }
+
+  spawnTimer--;
+  if (spawnTimer <= 0) { spawnEnemy(); spawnTimer = 90; }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  if (enemiesLeft <= 0 && enemies.filter(e => e.alive).length === 0) {
+    gameState = 'levelComplete';
+    beep(660, 0.15, 'sine', 0.08);
+    setTimeout(() => beep(880, 0.15, 'sine', 0.08), 150);
+    setTimeout(() => beep(1320, 0.25, 'sine', 0.08), 300);
+  }
+}
+
+// ===== Отрисовка =====
+function drawTank(t, isPlayer) {
+  const x = t.x, y = t.y, s = TANK;
+  let bodyColor = isPlayer ? '#8c8' : (t.color || '#ccc');
+  if (!isPlayer && t.isBonus) bodyColor = Math.floor(frameCounter / 8) % 2 ? '#f44' : '#fff';
+  if (isPlayer && t.invulnTimer > 0 && Math.floor(frameCounter/4) % 2) bodyColor = '#fff';
+
+  ctx.save();
+  ctx.translate(x + s/2, y + s/2);
+  ctx.rotate(t.dir * Math.PI/2);
+  ctx.fillStyle = bodyColor; ctx.fillRect(-s/2, -s/2, s, s);
+  ctx.fillStyle = '#333';
+  ctx.fillRect(-s/2, -s/2, 5, s);
+  ctx.fillRect(s/2-5, -s/2, 5, s);
+  ctx.fillStyle = isPlayer ? '#6a6' : '#999';
+  ctx.fillRect(-s/4, -s/4, s/2, s/2);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(-2, -s/2 - 4, 4, s/2 + 4);
+  ctx.restore();
+
+  if (isPlayer && t.power > 1) {
+    for (let i = 0; i < t.power - 1; i++) {
+      const sx = x + 3 + i*7, sy = y - 9;
+      ctx.fillStyle = '#000'; ctx.fillRect(sx, sy, 7, 7);
+      ctx.fillStyle = '#fff'; ctx.fillRect(sx + 1, sy + 1, 5, 5);
+    }
+  }
+  if (isPlayer && t.canSwim) {
+    ctx.fillStyle = '#000'; ctx.fillRect(x + s - 11, y - 9, 9, 7);
+    ctx.fillStyle = '#fff'; ctx.fillRect(x + s - 10, y - 8, 7, 5);
+    ctx.fillStyle = '#000'; ctx.font = 'bold 6px monospace';
+    ctx.fillText('~', x + s - 8, y - 4);
+  }
+  if (!isPlayer && t.maxHp > 1) {
+    ctx.fillStyle = '#f00'; ctx.fillRect(x, y-6, s, 3);
+    ctx.fillStyle = '#0f0'; ctx.fillRect(x, y-6, s * (t.hp/t.maxHp), 3);
+  }
+  if (!isPlayer && freezeTimer > 0) {
+    ctx.fillStyle = '#8cf';
+    ctx.fillRect(x + 2, y + 2, 3, 3);
+    ctx.fillRect(x + s - 5, y + 2, 3, 3);
+  }
+}
+
+function drawBonusIcon(b) {
+  const s = 24, cx = b.x, cy = b.y;
+  const x = cx - s/2, y = cy - s/2;
+  if (b.timer < 120 && Math.floor(b.blink/6) % 2) return;
+
+  ctx.fillStyle = '#fff'; ctx.fillRect(x, y, s, s);
+  const colors = {
+    star: '#ff0', grenade: '#f00', clock: '#0af',
+    shovel: '#a86', tank: '#0f0', ship: '#0ff', gun: '#fa0'
+  };
+  ctx.strokeStyle = colors[b.type] || '#000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
+
+  ctx.fillStyle = '#000'; ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const labels = { star:'★', grenade:'B', clock:'T', shovel:'W', tank:'+', ship:'~', gun:'G' };
+  ctx.fillText(labels[b.type] || '?', cx, cy + 1);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+function drawMapGround() {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const t = levelMap[y][x];
+      if (t === TREE) continue;
+      const px = x*TILE, py = y*TILE;
+      if (t === BRICK) {
+        ctx.fillStyle = '#a52a2a'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = '#8b1a1a';
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+          if ((i+j) % 2 === 0) ctx.fillRect(px+i*4, py+j*4, 4, 4);
+      } else if (t === STEEL) {
+        ctx.fillStyle = '#888'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = '#bbb'; ctx.fillRect(px+2, py+2, TILE-4, TILE-4);
+        ctx.fillStyle = '#666'; ctx.fillRect(px+5, py+5, TILE-10, TILE-10);
+      } else if (t === WATER) {
+        ctx.fillStyle = '#1a4a8a'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = '#2a6aba';
+        ctx.fillRect(px+2, py+4, TILE-4, 3);
+        ctx.fillRect(px+2, py+10, TILE-4, 3);
+      } else if (t === ICE) {
+        ctx.fillStyle = '#aaddff'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = '#cceeff'; ctx.fillRect(px+2, py+2, 4, 4);
+      } else if (t === BASE) {
+        ctx.fillStyle = '#444'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = '#fc0'; ctx.fillRect(px+3, py+3, TILE-6, TILE-6);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(px+5, py+6, 2, 2);
+        ctx.fillRect(px+9, py+6, 2, 2);
+        ctx.fillRect(px+6, py+9, 4, 2);
+      }
+    }
+  }
+}
+
+function drawMapTrees() {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (levelMap[y][x] !== TREE) continue;
+      const px = x*TILE, py = y*TILE;
+      ctx.fillStyle = 'rgba(20,80,20,0.85)';
+      ctx.fillRect(px, py, TILE, TILE);
+      ctx.fillStyle = '#2a8a2a';
+      ctx.fillRect(px+2, py+2, 5, 5);
+      ctx.fillRect(px+9, py+8, 5, 5);
+    }
+  }
+}
+
+function drawHUD() {
+  ctx.fillStyle = '#fff'; ctx.font = '12px monospace';
+  ctx.fillText('SCORE: ' + score, 6, 14);
+  ctx.fillText('LIVES: ' + player.lives, canvas.width/2 - 35, 14);
+  const totalLeft = enemiesLeft + enemies.filter(e=>e.alive).length;
+  ctx.fillText('LVL: ' + currentLevel + '  LEFT: ' + totalLeft, canvas.width - 140, 14);
+  ctx.fillStyle = '#8f8';
+  ctx.fillText('SEED: ' + currentLevel, canvas.width - 80, 28);
+  ctx.fillStyle = '#fff';
+  if (freezeTimer > 0) { ctx.fillStyle = '#8cf'; ctx.fillText('FREEZE ' + Math.ceil(freezeTimer/60), 6, 28); }
+  if (baseWallTimer > 0) { ctx.fillStyle = '#a86'; ctx.fillText('WALL ' + Math.ceil(baseWallTimer/60), 6, 42); }
+  if (player.canSwim) { ctx.fillStyle = '#0ff'; ctx.fillText('SWIM', 6, 56); }
+}
+
+function drawOverlay(title, lines, titleColor) {
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+
+  ctx.font = 'bold 26px monospace';
+  ctx.fillStyle = titleColor;
+  ctx.fillText(title, canvas.width/2, canvas.height/2 - 40);
+
+  ctx.font = '16px monospace';
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], canvas.width/2, canvas.height/2 + i * 28);
+  }
+  ctx.textAlign = 'left';
+}
+
+function render() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawMapGround();
+  for (const b of bonuses) drawBonusIcon(b);
+  for (const e of enemies) if (e.alive) drawTank(e, false);
+  if (player.alive) drawTank(player, true);
+
+  for (const b of bullets) {
+    ctx.fillStyle = b.isPlayer ? '#ff0' : '#f44';
+    ctx.beginPath();
+    ctx.arc(b.x + BULLET/2, b.y + BULLET/2, BULLET/2 + 1, 0, Math.PI*2);
+    ctx.fill();
+  }
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+  }
+  ctx.globalAlpha = 1;
+
+  drawMapTrees();
+  drawHUD();
+
+  if (gameState === 'menu') {
+    drawOverlay(
+      'ТАНЧИКИ 1990',
+      ['УРОВЕНЬ ' + currentLevel, 'SEED: ' + currentLevel, '', 'OK — СТАРТ (Пробел)', 'Play/Pause — пауза', 'Stop — рестарт'],
+      '#ff0'
+    );
+  } else if (gameState === 'paused') {
+    drawOverlay('ПАУЗА', ['', 'Play/Pause или OK — ПРОДОЛЖИТЬ'], '#8cf');
+  } else if (gameState === 'levelComplete') {
+    drawOverlay(
+      'УРОВЕНЬ ' + currentLevel + ' ПРОЙДЕН!',
+      ['СЧЁТ: ' + score, '', 'OK — СЛЕДУЮЩИЙ УРОВЕНЬ'],
+      '#4f4'
+    );
+  } else if (gameState === 'gameOver') {
+    drawOverlay(
+      'ИГРА ОКОНЧЕНА',
+      ['УРОВЕНЬ: ' + currentLevel, 'СЧЁТ: ' + score, '', 'OK или Stop — ЗАНОВО'],
+      '#f44'
+    );
+  }
+}
+
+// ===== Главный цикл =====
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+newGame();
+loop();
+</script>
+</body>
+</html>
