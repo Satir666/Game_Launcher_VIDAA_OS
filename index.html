@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Game Launcher</title>
+    <style>
+        /* Базовые стили в стиле Brawl Stars (темный фон, яркие акценты) */
+        :root {
+            --bg-color: #1a1c29;
+            --card-bg: #2d3142;
+            --card-focus-bg: #4f5d75;
+            --text-color: #ffffff;
+            --accent-color: #ffc107; /* Желтый цвет для фокуса */
+            --desc-color: #b0b5c1;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden; /* Отключаем прокрутку страницы, используем фокус */
+        }
+
+        h1 {
+            text-align: center;
+            color: #00e5ff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+
+        .launcher-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            max-width: 800px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 10px;
+            /* Скрываем скроллбар, но оставляем возможность прокрутки */
+            scrollbar-width: none; 
+        }
+        .launcher-container::-webkit-scrollbar { display: none; }
+
+        /* Карточка игры (кнопка) */
+        .game-btn {
+            display: flex;
+            align-items: center;
+            background-color: var(--card-bg);
+            border: 4px solid transparent;
+            border-radius: 15px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        /* Состояние фокуса (для пульта/клавиатуры) */
+        .game-btn.focused {
+            background-color: var(--card-focus-bg);
+            border-color: var(--accent-color);
+            transform: scale(1.02);
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.4);
+            z-index: 10;
+        }
+
+        .game-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 10px;
+            object-fit: cover;
+            margin-right: 20px;
+            background-color: #000;
+            border: 2px solid #555;
+        }
+
+        .game-info {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .game-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: var(--accent-color);
+        }
+
+        .game-desc {
+            font-size: 0.95rem;
+            color: var(--desc-color);
+            line-height: 1.4;
+        }
+
+        /* Заглушка, если нет иконки */
+        .no-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 10px;
+            margin-right: 20px;
+            background-color: #444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        /* Оверлей загрузки */
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            font-size: 2rem;
+            color: var(--accent-color);
+        }
+        
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--accent-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <h1>Выбор игры</h1>
+    
+    <div class="launcher-container" id="launcher">
+        <!-- Сюда будут генерироваться кнопки игр -->
+    </div>
+
+    <div id="loading-overlay">
+        <div>Запуск игры...</div>
+        <div class="spinner"></div>
+    </div>
+
+    <script>
+        // ВАЖНО: В реальном проекте этот массив должен генерироваться сервером (Python, Node.js, PHP).
+        // Браузер не может сам прочитать папки из-за безопасности.
+        // Представьте, что это данные, считанные из ваших папок.
+        const gamesData = [
+            {
+                folderName: "EL_PRIMO_CARRETA",
+                title: "EL PRIMO CARRETA",
+                description: "An exclusive profile picture awarded for winning in the Brawl Cup Challenge LQ 2025 event in Brazil.",
+                icon: "EL_PRIMO_CARRETA/ICO.png",
+                gamePath: "EL_PRIMO_CARRETA/Game.html"
+            },
+            {
+                folderName: "BRAZILIAN_FOOTBALL",
+                title: "BRAZILIAN FOOTBALL",
+                description: "It was only in the Supercell Employee App during BSC LQ 2025 event in Brazil.",
+                icon: "BRAZILIAN_FOOTBALL/ICO.png",
+                gamePath: "BRAZILIAN_FOOTBALL/Game.html"
+            },
+            {
+                folderName: "BUZZ_LIGHT_YEAR",
+                title: "BUZZ LIGHTYEAR",
+                description: "Only players in the world who received this icon got it by using an advantage of a bug that gave them a free skin and exclusive brawler by mocking the game.",
+                icon: "BUZZ_LIGHT_YEAR/ICO.png",
+                gamePath: "BUZZ_LIGHT_YEAR/Game.html"
+            },
+            {
+                folderName: "HYPERCHARGE_STARR",
+                title: "HYPERCHARGE STARR",
+                description: "I know how to get it but I won't leak that 😈",
+                icon: "HYPERCHARGE_STARR/ICO.png",
+                gamePath: "HYPERCHARGE_STARR/Game.html"
+            }
+        ];
+
+        const launcherContainer = document.getElementById('launcher');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        let currentFocusIndex = 0;
+        let gameButtons = [];
+
+        // 1. Функция генерации кнопок
+        function renderGames() {
+            gamesData.forEach((game, index) => {
+                const btn = document.createElement('div');
+                btn.className = 'game-btn';
+                btn.dataset.index = index;
+                
+                // Обработка иконки (если файла нет, покажет заглушку)
+                let iconHTML = `<img src="${game.icon}" class="game-icon" alt="${game.title}" onerror="this.outerHTML='<div class=\\'no-icon\\'>Нет<br>ICO</div>'">`;
+
+                btn.innerHTML = `
+                    ${iconHTML}
+                    <div class="game-info">
+                        <div class="game-title">${game.title}</div>
+                        <div class="game-desc">${game.description}</div>
+                    </div>
+                `;
+
+                // Добавляем обработчик клика мышью (для ПК)
+                btn.addEventListener('click', () => {
+                    currentFocusIndex = index;
+                    updateFocus();
+                    launchGame(game.gamePath);
+                });
+
+                launcherContainer.appendChild(btn);
+                gameButtons.push(btn);
+            });
+            
+            // Устанавливаем изначальный фокус на первую игру
+            if (gameButtons.length > 0) {
+                updateFocus();
+            }
+        }
+
+        // 2. Функция обновления визуального фокуса
+        function updateFocus() {
+            gameButtons.forEach((btn, index) => {
+                if (index === currentFocusIndex) {
+                    btn.classList.add('focused');
+                    // Прокрутка к элементу, чтобы он был в зоне видимости на ТВ
+                    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    btn.classList.remove('focused');
+                }
+            });
+        }
+
+        // 3. Функция запуска игры
+        function launchGame(path) {
+            loadingOverlay.style.display = 'flex';
+            // Небольшая задержка для визуального эффекта, затем переход
+            setTimeout(() => {
+                window.location.href = path;
+            }, 500);
+        }
+
+        // 4. Обработка управления (Клавиатура и Пульт TV)
+        document.addEventListener('keydown', (e) => {
+            // Стрелка вверх
+            if (e.key === 'ArrowUp' || e.keyCode === 38) {
+                e.preventDefault(); // Останавливаем прокрутку страницы
+                if (currentFocusIndex > 0) {
+                    currentFocusIndex--;
+                    updateFocus();
+                }
+            }
+            // Стрелка вниз
+            else if (e.key === 'ArrowDown' || e.keyCode === 40) {
+                e.preventDefault();
+                if (currentFocusIndex < gameButtons.length - 1) {
+                    currentFocusIndex++;
+                    updateFocus();
+                }
+            }
+            // Кнопка ОК на пульте (Enter) или Пробел
+            else if (e.key === 'Enter' || e.keyCode === 13 || e.key === ' ' || e.keyCode === 32) {
+                e.preventDefault();
+                if (gameButtons.length > 0) {
+                    const selectedGame = gamesData[currentFocusIndex];
+                    launchGame(selectedGame.gamePath);
+                }
+            }
+        });
+
+        // Инициализация при загрузке
+        window.onload = renderGames;
+
+    </script>
+</body>
+</html>
