@@ -1,286 +1,615 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML Game Launcher</title>
-    <style>
-        /* Базовые стили в стиле Brawl Stars (темный фон, яркие акценты) */
-        :root {
-            --bg-color: #1a1c29;
-            --card-bg: #2d3142;
-            --card-focus-bg: #4f5d75;
-            --text-color: #ffffff;
-            --accent-color: #ffc107; /* Желтый цвет для фокуса */
-            --desc-color: #b0b5c1;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Launcher</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            overflow: hidden; /* Отключаем прокрутку страницы, используем фокус */
-        }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0e1a;
+    color: #fff;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-        h1 {
-            text-align: center;
-            color: #00e5ff;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            margin-bottom: 20px;
-        }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(0, 217, 255, 0.15), transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(123, 47, 255, 0.15), transparent 50%),
+      radial-gradient(ellipse at 50% 50%, #0a0e1a, #05070e);
+    z-index: -1;
+  }
 
-        .launcher-container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            width: 100%;
-            max-width: 800px;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 10px;
-            /* Скрываем скроллбар, но оставляем возможность прокрутки */
-            scrollbar-width: none; 
-        }
-        .launcher-container::-webkit-scrollbar { display: none; }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 36px 60px 24px;
+  }
 
-        /* Карточка игры (кнопка) */
-        .game-btn {
-            display: flex;
-            align-items: center;
-            background-color: var(--card-bg);
-            border: 4px solid transparent;
-            border-radius: 15px;
-            padding: 15px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: left;
-        }
+  header { text-align: center; margin-bottom: 26px; flex-shrink: 0; }
 
-        /* Состояние фокуса (для пульта/клавиатуры) */
-        .game-btn.focused {
-            background-color: var(--card-focus-bg);
-            border-color: var(--accent-color);
-            transform: scale(1.02);
-            box-shadow: 0 0 20px rgba(255, 193, 7, 0.4);
-            z-index: 10;
-        }
+  h1 {
+    font-size: 46px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #00d9ff;
+    text-shadow: 0 0 24px rgba(0, 217, 255, 0.55),
+                 0 0 60px rgba(123, 47, 255, 0.35);
+  }
 
-        .game-icon {
-            width: 80px;
-            height: 80px;
-            border-radius: 10px;
-            object-fit: cover;
-            margin-right: 20px;
-            background-color: #000;
-            border: 2px solid #555;
-        }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 26px;
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 10px;
+    align-content: start;
+    scrollbar-width: none;
+  }
+  #grid::-webkit-scrollbar { display: none; }
 
-        .game-info {
-            display: flex;
-            flex-direction: column;
-            flex-grow: 1;
-        }
+  .game-card {
+    position: relative;
+    background: linear-gradient(145deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+    border: 2px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: transform 0.22s cubic-bezier(0.4,0,0.2,1),
+                border-color 0.22s ease,
+                box-shadow 0.22s ease,
+                background 0.22s ease;
+    overflow: hidden;
+    outline: none;
+  }
 
-        .game-title {
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: var(--accent-color);
-        }
+  .game-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 22px;
+    padding: 2px;
+    background: linear-gradient(135deg, #00d9ff, #7b2fff);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.22s ease;
+    pointer-events: none;
+  }
 
-        .game-desc {
-            font-size: 0.95rem;
-            color: var(--desc-color);
-            line-height: 1.4;
-        }
+  .game-card.focused {
+    transform: scale(1.07);
+    border-color: transparent;
+    background: linear-gradient(145deg, rgba(0,217,255,0.12), rgba(123,47,255,0.12));
+    box-shadow:
+      0 0 28px rgba(0,217,255,0.42),
+      0 0 60px rgba(123,47,255,0.25),
+      inset 0 0 22px rgba(0,217,255,0.10);
+    z-index: 2;
+  }
+  .game-card.focused::before { opacity: 1; }
 
-        /* Заглушка, если нет иконки */
-        .no-icon {
-            width: 80px;
-            height: 80px;
-            border-radius: 10px;
-            margin-right: 20px;
-            background-color: #444;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            text-align: center;
-        }
+  .icon-wrap {
+    width: 100%;
+    padding-bottom: 100%;
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    background: linear-gradient(145deg, rgba(0,217,255,0.06), rgba(123,47,255,0.06));
+  }
+  .icon-wrap img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .icon-wrap .placeholder {
+    position: absolute; inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 52px;
+    font-weight: 700;
+    color: rgba(0, 217, 255, 0.45);
+  }
 
-        /* Оверлей загрузки */
-        #loading-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.9);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            font-size: 2rem;
-            color: var(--accent-color);
-        }
-        
-        .spinner {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid var(--accent-color);
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin-top: 20px;
-        }
+  .game-card .title {
+    font-size: 17px;
+    font-weight: 600;
+    text-align: center;
+    color: #d8e4f0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    letter-spacing: 0.3px;
+  }
+  .game-card.focused .title { color: #fff; }
 
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
+  #info-panel {
+    flex-shrink: 0;
+    margin-top: 18px;
+    min-height: 92px;
+    background: linear-gradient(135deg, rgba(0,217,255,0.08), rgba(123,47,255,0.08));
+    border: 1px solid rgba(0,217,255,0.22);
+    border-radius: 18px;
+    padding: 16px 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+  }
+  #info-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #00d9ff;
+    letter-spacing: 1px;
+  }
+  #info-desc {
+    font-size: 15px;
+    color: #a8b8cc;
+    line-height: 1.4;
+    max-height: 58px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 6px; right: 18px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.28);
+    letter-spacing: 1px;
+  }
+
+  #loading {
+    position: fixed; inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: rgba(255,255,255,0.6);
+    background: #0a0e1a;
+    z-index: 100;
+    transition: opacity 0.35s ease;
+    text-align: center;
+    padding: 30px;
+    line-height: 1.7;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  #loading .err { font-size: 18px; color: #ff7a7a; max-width: 700px; }
+
+  #empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    color: rgba(255,255,255,0.5);
+    font-size: 20px;
+    line-height: 1.7;
+  }
+
+  @media (max-width: 900px) {
+    #app { padding: 18px 22px 16px; }
+    h1 { font-size: 30px; letter-spacing: 3px; }
+    #grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+    .game-card { padding: 10px; border-radius: 16px; }
+    .game-card .title { font-size: 13px; }
+    #info-panel { padding: 12px 18px; }
+  }
+
+  @media (min-width: 1280px) {
+    #grid { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 30px; }
+  }
+  @media (min-width: 1920px) {
+    #grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 34px; }
+    h1 { font-size: 52px; }
+  }
+</style>
 </head>
 <body>
-
-    <h1>Выбор игры</h1>
-    
-    <div class="launcher-container" id="launcher">
-        <!-- Сюда будут генерироваться кнопки игр -->
+  <div id="app">
+    <header><h1>Game Launcher</h1></header>
+    <main id="grid"></main>
+    <div id="info-panel">
+      <div id="info-title"></div>
+      <div id="info-desc"></div>
     </div>
+  </div>
+  <div id="hint">← → ↑ ↓ — выбор · OK / Space — запуск</div>
+  <div id="loading">Поиск игр…</div>
 
-    <div id="loading-overlay">
-        <div>Запуск игры...</div>
-        <div class="spinner"></div>
-    </div>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   ⚙️  НАСТРОЙКИ
+   ────────────────────────────────────────────────────────────── */
+// Работает ли авто-обнаружение:
+//   • GitHub Pages (*.github.io)          → GitHub REST API  ✅
+//   • Apache / nginx / python -m http.server → directory listing ✅
+//   • Кастомный домен (mydomain.com)      → задай GITHUB_REPO ниже
+//   • Иначе → впиши папки вручную в FALLBACK_LIST
 
-    <script>
-        // ВАЖНО: В реальном проекте этот массив должен генерироваться сервером (Python, Node.js, PHP).
-        // Браузер не может сам прочитать папки из-за безопасности.
-        // Представьте, что это данные, считанные из ваших папок.
-        const gamesData = [
-            {
-                folderName: "EL_PRIMO_CARRETA",
-                title: "EL PRIMO CARRETA",
-                description: "An exclusive profile picture awarded for winning in the Brawl Cup Challenge LQ 2025 event in Brazil.",
-                icon: "EL_PRIMO_CARRETA/ICO.png",
-                gamePath: "EL_PRIMO_CARRETA/Game.html"
-            },
-            {
-                folderName: "BRAZILIAN_FOOTBALL",
-                title: "BRAZILIAN FOOTBALL",
-                description: "It was only in the Supercell Employee App during BSC LQ 2025 event in Brazil.",
-                icon: "BRAZILIAN_FOOTBALL/ICO.png",
-                gamePath: "BRAZILIAN_FOOTBALL/Game.html"
-            },
-            {
-                folderName: "BUZZ_LIGHT_YEAR",
-                title: "BUZZ LIGHTYEAR",
-                description: "Only players in the world who received this icon got it by using an advantage of a bug that gave them a free skin and exclusive brawler by mocking the game.",
-                icon: "BUZZ_LIGHT_YEAR/ICO.png",
-                gamePath: "BUZZ_LIGHT_YEAR/Game.html"
-            },
-            {
-                folderName: "HYPERCHARGE_STARR",
-                title: "HYPERCHARGE STARR",
-                description: "I know how to get it but I won't leak that 😈",
-                icon: "HYPERCHARGE_STARR/ICO.png",
-                gamePath: "HYPERCHARGE_STARR/Game.html"
-            }
-        ];
+const GITHUB_REPO = null;
+// ↑ Для кастомного домена укажи 'username/repo-name', например:
+//   const GITHUB_REPO = 'ivanov/my-games';
 
-        const launcherContainer = document.getElementById('launcher');
-        const loadingOverlay = document.getElementById('loading-overlay');
-        let currentFocusIndex = 0;
-        let gameButtons = [];
+const FALLBACK_LIST = [
+  // 'Snake', 'Tetris', 'Arkanoid',
+];
 
-        // 1. Функция генерации кнопок
-        function renderGames() {
-            gamesData.forEach((game, index) => {
-                const btn = document.createElement('div');
-                btn.className = 'game-btn';
-                btn.dataset.index = index;
-                
-                // Обработка иконки (если файла нет, покажет заглушку)
-                let iconHTML = `<img src="${game.icon}" class="game-icon" alt="${game.title}" onerror="this.outerHTML='<div class=\\'no-icon\\'>Нет<br>ICO</div>'">`;
+const EXCLUDE = new Set([
+  'node_modules', '.git', '.svn', 'css', 'js', 'styles', 'scripts',
+  'images', 'img', 'assets', 'fonts', 'lib', 'libs', 'vendor'
+]);
 
-                btn.innerHTML = `
-                    ${iconHTML}
-                    <div class="game-info">
-                        <div class="game-title">${game.title}</div>
-                        <div class="game-desc">${game.description}</div>
-                    </div>
-                `;
+const CACHE_KEY = 'launcher_folders_v1';
+const CACHE_TTL = 10 * 60 * 1000; // 10 минут
+/* ═══════════════════════════════════════════════════════════════ */
 
-                // Добавляем обработчик клика мышью (для ПК)
-                btn.addEventListener('click', () => {
-                    currentFocusIndex = index;
-                    updateFocus();
-                    launchGame(game.gamePath);
-                });
+(function () {
+  'use strict';
 
-                launcherContainer.appendChild(btn);
-                gameButtons.push(btn);
-            });
-            
-            // Устанавливаем изначальный фокус на первую игру
-            if (gameButtons.length > 0) {
-                updateFocus();
-            }
+  const grid      = document.getElementById('grid');
+  const infoTitle = document.getElementById('info-title');
+  const infoDesc  = document.getElementById('info-desc');
+  const loading   = document.getElementById('loading');
+  const STORAGE_KEY = 'launcher_focus';
+
+  let games = [];
+  let cards = [];
+  let focusedIndex = 0;
+
+  const enc  = (s) => encodeURIComponent(s);
+
+  async function tryFetchText(url) {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) return '';
+      return (await r.text()).trim();
+    } catch { return ''; }
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     1) КЭШ СПИСКА ПАПОК
+     ──────────────────────────────────────────────────────────── */
+  function readCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || !Array.isArray(obj.folders)) return null;
+      if (Date.now() - obj.ts > CACHE_TTL) return null;
+      return obj.folders;
+    } catch { return null; }
+  }
+  function writeCache(folders) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), folders }));
+    } catch (_) {}
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     2) GITHUB API
+     ──────────────────────────────────────────────────────────── */
+  async function fetchGitHubContents(user, repo, apiPath) {
+    const clean = apiPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+    const url = 'https://api.github.com/repos/' +
+      encodeURIComponent(user) + '/' + encodeURIComponent(repo) +
+      '/contents/' + clean;
+
+    const r = await fetch(url, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+      cache: 'no-store'
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return Array.isArray(data) ? data : null;
+  }
+
+  async function discoverViaGitHub() {
+    // Режим кастомного домена — явно задан репозиторий
+    if (GITHUB_REPO && GITHUB_REPO.includes('/')) {
+      const [user, repo] = GITHUB_REPO.split('/');
+      const dirPath = location.pathname
+        .replace(/index\.html?$/i, '')
+        .replace(/\/?$/, '/');
+      const apiPath = dirPath.replace(/^\//, '');
+      const data = await fetchGitHubContents(user, repo, apiPath);
+      if (!data) return null;
+      return data
+        .filter(it => it.type === 'dir')
+        .map(it => it.name)
+        .filter(n => !n.startsWith('.') && !EXCLUDE.has(n.toLowerCase()));
+    }
+
+    // Авто-режим: только для *.github.io
+    const host = location.hostname;
+    if (!host.endsWith('.github.io')) return null;
+    const user = host.slice(0, -'.github.io'.length);
+    if (!user) return null;
+
+    const dirPath = location.pathname
+      .replace(/index\.html?$/i, '')
+      .replace(/\/?$/, '/');
+    const segments = dirPath.split('/').filter(Boolean);
+
+    const candidates = [];
+
+    // Project page: username.github.io/repo/...
+    if (segments.length >= 1) {
+      candidates.push({
+        repo: segments[0],
+        apiPath: segments.slice(1).join('/')
+      });
+    }
+    // User/org page: username.github.io/...
+    candidates.push({
+      repo: user + '.github.io',
+      apiPath: segments.join('/')
+    });
+
+    for (const c of candidates) {
+      const data = await fetchGitHubContents(user, c.repo, c.apiPath);
+      if (!data) continue;
+      const folders = data
+        .filter(it => it.type === 'dir')
+        .map(it => it.name)
+        .filter(n => !n.startsWith('.') && !EXCLUDE.has(n.toLowerCase()));
+      if (folders.length) return folders;
+      // нашли валидный, но пустой — тоже вернём
+      return folders;
+    }
+    return null;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     3) DIRECTORY LISTING (Apache / nginx / python -m http.server)
+     ──────────────────────────────────────────────────────────── */
+  async function discoverViaListing() {
+    let html;
+    try {
+      const r = await fetch('./', { cache: 'no-store' });
+      if (!r.ok) return null;
+      html = await r.text();
+    } catch { return null; }
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const folders = new Set();
+
+    doc.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if (!href.endsWith('/')) return;
+      if (href.startsWith('..') || href.startsWith('./') ||
+          href.startsWith('?')  || href.startsWith('#'))  return;
+      if (/^[a-z][a-z0-9+.\-]*:/i.test(href)) return;
+
+      try {
+        const url = new URL(href, location.href);
+        if (url.origin !== location.origin) return;
+        const name = decodeURIComponent(url.pathname)
+          .replace(/\/+$/, '').split('/').pop();
+        if (!name || name.startsWith('.')) return;
+        if (EXCLUDE.has(name.toLowerCase())) return;
+        folders.add(name);
+      } catch (_) {}
+    });
+
+    return folders.size ? Array.from(folders) : null;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     4) СБОР ДАННЫХ ПО ИГРАМ
+     ──────────────────────────────────────────────────────────── */
+  async function buildGames(folders) {
+    return Promise.all(folders.map(async (folder) => {
+      const description = await tryFetchText(enc(folder) + '/Read.txt');
+      return {
+        folder,
+        title: folder,
+        icon:  enc(folder) + '/ICO.png',
+        game:  enc(folder) + '/Game.html',
+        description
+      };
+    }));
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     5) РЕНДЕР
+     ──────────────────────────────────────────────────────────── */
+  function render() {
+    grid.innerHTML = '';
+    cards = [];
+
+    if (!games.length) {
+      grid.innerHTML =
+        '<div id="empty">Игр не найдено.<br>' +
+        'Добавьте папки с файлами <b>Game.html</b>, <b>ICO.png</b>, ' +
+        '<b>Read.txt</b> рядом с <code>index.html</code>.</div>';
+      return;
+    }
+
+    games.forEach((game, i) => {
+      const card = document.createElement('div');
+      card.className = 'game-card';
+      card.dataset.index = i;
+      card.tabIndex = -1;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'icon-wrap';
+
+      const img = document.createElement('img');
+      img.alt = game.title;
+      img.src = game.icon;
+      img.addEventListener('error', function () {
+        img.style.display = 'none';
+        if (!wrap.querySelector('.placeholder')) {
+          const ph = document.createElement('div');
+          ph.className = 'placeholder';
+          ph.textContent = (game.title || '?').charAt(0).toUpperCase();
+          wrap.appendChild(ph);
         }
+      });
+      wrap.appendChild(img);
 
-        // 2. Функция обновления визуального фокуса
-        function updateFocus() {
-            gameButtons.forEach((btn, index) => {
-                if (index === currentFocusIndex) {
-                    btn.classList.add('focused');
-                    // Прокрутка к элементу, чтобы он был в зоне видимости на ТВ
-                    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                } else {
-                    btn.classList.remove('focused');
-                }
-            });
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = game.title;
+
+      card.appendChild(wrap);
+      card.appendChild(title);
+
+      card.addEventListener('click',      () => launch(i));
+      card.addEventListener('mouseenter', () => setFocus(i));
+
+      grid.appendChild(card);
+      cards.push(card);
+    });
+
+    setFocus(0);
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     6) ФОКУС
+     ──────────────────────────────────────────────────────────── */
+  function setFocus(index) {
+    if (!cards.length) return;
+    if (index < 0) index = 0;
+    if (index > cards.length - 1) index = cards.length - 1;
+
+    if (cards[focusedIndex]) cards[focusedIndex].classList.remove('focused');
+    focusedIndex = index;
+    const card = cards[index];
+    card.classList.add('focused');
+
+    try { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+
+    const g = games[index];
+    infoTitle.textContent = g.title;
+    infoDesc.textContent  = g.description || 'Описание отсутствует.';
+  }
+
+  function getColumns() {
+    const style = getComputedStyle(grid);
+    return Math.max(1, style.gridTemplateColumns.split(' ').filter(Boolean).length);
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     7) ЗАПУСК
+     ──────────────────────────────────────────────────────────── */
+  function launch(index) {
+    const game = games[index];
+    if (!game) return;
+    try { localStorage.setItem(STORAGE_KEY, String(index)); } catch (_) {}
+    window.location.href = game.game;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     8) КЛАВИАТУРА / ПУЛЬТ VIDAA
+     ──────────────────────────────────────────────────────────── */
+  document.addEventListener('keydown', function (e) {
+    const key  = e.key;
+    const code = e.keyCode || e.which;
+    const cols = getColumns();
+    let handled = true;
+
+    if (key === 'ArrowRight' || key === 'Right' || code === 39) {
+      setFocus(focusedIndex + 1);
+    } else if (key === 'ArrowLeft' || key === 'Left' || code === 37) {
+      setFocus(focusedIndex - 1);
+    } else if (key === 'ArrowDown' || key === 'Down' || code === 40) {
+      setFocus(focusedIndex + cols);
+    } else if (key === 'ArrowUp' || key === 'Up' || code === 38) {
+      setFocus(focusedIndex - cols);
+    } else if (
+      key === 'Enter' || key === 'OK' || key === 'Accept' ||
+      key === ' '     || key === 'Spacebar' || key === 'Select' ||
+      code === 13     || code === 32
+    ) {
+      launch(focusedIndex);
+    } else {
+      handled = false;
+    }
+
+    if (handled) e.preventDefault();
+  }, { passive: false });
+
+  /* ────────────────────────────────────────────────────────────
+     9) ВОССТАНОВЛЕНИЕ ФОКУСА И РЕСАЙЗ
+     ──────────────────────────────────────────────────────────── */
+  function restoreFocus() {
+    let saved = 0;
+    try { saved = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10) || 0; } catch (_) {}
+    if (saved > 0 && saved < cards.length) setFocus(saved);
+  }
+
+  let resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (cards.length) setFocus(focusedIndex); }, 120);
+  });
+
+  /* ────────────────────────────────────────────────────────────
+     10) СТАРТ
+     ──────────────────────────────────────────────────────────── */
+  function showError(msg) {
+    loading.innerHTML = '<div class="err">' + msg + '</div>';
+  }
+
+  (async function init() {
+    // 1) кэш
+    let folders = readCache();
+
+    if (!folders) {
+      // 2) GitHub API
+      folders = await discoverViaGitHub();
+
+      // 3) directory listing
+      if (!folders || !folders.length) {
+        const viaListing = await discoverViaListing();
+        if (viaListing && viaListing.length) folders = viaListing;
+      }
+
+      // 4) fallback
+      if (!folders || !folders.length) {
+        if (FALLBACK_LIST.length) {
+          folders = FALLBACK_LIST.slice();
+        } else {
+          showError(
+            'Не удалось получить список игр.<br><br>' +
+            'Скорее всего хостинг не отдаёт список файлов.<br>' +
+            'Открой <code>index.html</code> в редакторе и заполни ' +
+            '<code>FALLBACK_LIST</code> названиями папок с играми.'
+          );
+          return;
         }
+      } else {
+        writeCache(folders);
+      }
+    }
 
-        // 3. Функция запуска игры
-        function launchGame(path) {
-            loadingOverlay.style.display = 'flex';
-            // Небольшая задержка для визуального эффекта, затем переход
-            setTimeout(() => {
-                window.location.href = path;
-            }, 500);
-        }
-
-        // 4. Обработка управления (Клавиатура и Пульт TV)
-        document.addEventListener('keydown', (e) => {
-            // Стрелка вверх
-            if (e.key === 'ArrowUp' || e.keyCode === 38) {
-                e.preventDefault(); // Останавливаем прокрутку страницы
-                if (currentFocusIndex > 0) {
-                    currentFocusIndex--;
-                    updateFocus();
-                }
-            }
-            // Стрелка вниз
-            else if (e.key === 'ArrowDown' || e.keyCode === 40) {
-                e.preventDefault();
-                if (currentFocusIndex < gameButtons.length - 1) {
-                    currentFocusIndex++;
-                    updateFocus();
-                }
-            }
-            // Кнопка ОК на пульте (Enter) или Пробел
-            else if (e.key === 'Enter' || e.keyCode === 13 || e.key === ' ' || e.keyCode === 32) {
-                e.preventDefault();
-                if (gameButtons.length > 0) {
-                    const selectedGame = gamesData[currentFocusIndex];
-                    launchGame(selectedGame.gamePath);
-                }
-            }
-        });
-
-        // Инициализация при загрузке
-        window.onload = renderGames;
-
-    </script>
+    games = await buildGames(folders);
+    render();
+    restoreFocus();
+    loading.classList.add('hidden');
+  })();
+})();
+</script>
 </body>
 </html>
