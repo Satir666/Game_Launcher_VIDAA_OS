@@ -178,26 +178,28 @@ if (typeof jsnes === 'undefined') {
     KeyX: 'BUTTON_A',
     Space: 'BUTTON_A',
     KeyZ: 'BUTTON_B',
-    Enter: 'BUTTON_START',
-    ShiftLeft: 'BUTTON_SELECT',
-    ShiftRight: 'BUTTON_SELECT'
+    Enter: 'BUTTON_A',           // OK — стрельба
+    NumpadEnter: 'BUTTON_A',
+    ShiftLeft: 'BUTTON_START',   // Shift — пауза
+    ShiftRight: 'BUTTON_START',
+    Backspace: 'BUTTON_START'    // Backspace — пауза
   };
 
   // Коды пульта Hisense / Vidaa OS
   const VIDAA_KEY_MAP = {
-    13: 'BUTTON_START',   // OK / Enter
-    8: 'BUTTON_SELECT',   // Back
-    27: 'BUTTON_SELECT',  // Escape / Back
+    13: 'BUTTON_A',        // OK / Enter — СТРЕЛЬБА
+    8: 'BUTTON_START',     // Back       — ПАУЗА
+    27: 'BUTTON_START',    // Escape/Back — ПАУЗА
     37: 'BUTTON_LEFT',
     38: 'BUTTON_UP',
     39: 'BUTTON_RIGHT',
     40: 'BUTTON_DOWN',
-    415: 'BUTTON_A',      // Play
-    19: 'BUTTON_B',       // Pause
-    413: 'BUTTON_B',      // Stop
-    417: 'BUTTON_A',      // Fast Forward
-    412: 'BUTTON_B',      // Rewind
-    10009: 'BUTTON_SELECT' // Return / Exit
+    415: 'BUTTON_A',       // Play — стрельба
+    19: 'BUTTON_START',    // Pause — пауза
+    413: 'BUTTON_START',   // Stop — пауза
+    417: 'BUTTON_A',       // Fast Forward — стрельба
+    412: 'BUTTON_A',       // Rewind — стрельба
+    10009: 'BUTTON_START'  // Return / Exit — пауза
   };
 
   function getButtonName(e) {
