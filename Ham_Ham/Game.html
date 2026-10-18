@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hamtaro: Ham-Ham Games (GBA)</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+        }
+        #game {
+            width: 100%;
+            height: 100%;
+        }
+        /* Прячем стандартный интерфейс EmulatorJS */
+        .ejs_start_button, .ejs_menu_bar {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game"></div>
+
+<script>
+    // --- Настройки EmulatorJS для GBA ---
+    EJS_player = '#game';
+    EJS_core = 'gba';
+    // Файл лежит рядом с HTML и называется GBA_Game.gba
+    EJS_gameUrl = 'GBA_Game.gba';
+    EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+
+    // Автоматический fullscreen при старте
+    EJS_fullscreenOnLoad = true;
+
+    // Чистый запуск без лишнего UI
+    EJS_startOnLoaded = true;
+    EJS_disableDatabases = true;
+    EJS_disableLocalStorage = true;
+</script>
+<script src="https://cdn.emulatorjs.org/stable/data/loader.js"></script>
+
+<script>
+    // Резервный запрос fullscreen по первому жесту (если авто-режим заблокирован ТВ-браузером)
+    const requestFS = () => {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) elem.requestFullscreen().catch(() => {});
+        else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+    };
+    window.addEventListener('pointerdown', requestFS, { once: true });
+    window.addEventListener('keydown', requestFS, { once: true });
+</script>
+
+</body>
+</html>
