@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tetris 2 (NES)</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  #screen {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="screen" width="256" height="240"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/jsnes@1.2.1/dist/jsnes.min.js"></script>
+<script>
+if (typeof jsnes === 'undefined') {
+  document.write('<script src="https://unpkg.com/jsnes@1.2.1/dist/jsnes.min.js"><\/script>');
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.imageSmoothingEnabled = false;
+
+  const imageData = ctx.createImageData(256, 240);
+  const out32 = new Uint32Array(imageData.data.buffer);
+
+  /* ---------------- звук ---------------- */
+  const RING = 1 << 14;
+  const ring = new Float32Array(RING);
+  let rHead = 0, rTail = 0;
+  let audioCtx = null;
+  let scriptNode = null;
+
+  function initAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+
+    try {
+      audioCtx = new AC({ sampleRate: 44100 });
+    } catch (e) {
+      audioCtx = new AC();
+    }
+
+    scriptNode = audioCtx.createScriptProcessor(2048, 1, 1);
+    scriptNode.onaudioprocess = function (e) {
+      const out = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < out.length; i++) {
+        if (rTail !== rHead) {
+          out[i] = ring[rTail];
+          rTail = (rTail + 1) & (RING - 1);
+        } else {
+          out[i] = 0;
+        }
+      }
+    };
+    scriptNode.connect(audioCtx.destination);
+  }
+
+  function pushSample(l, r) {
+    const next = (rHead + 1) & (RING - 1);
+    if (next === rTail) return;
+    ring[rHead] = (l + r) * 0.5 * 0.6;
+    rHead = next;
+  }
+
+  /* ---------------- fullscreen ---------------- */
+  function requestFullscreen() {
+    if (document.fullscreenElement) return;
+    const el = document.documentElement;
+    const fn =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      el.mozRequestFullScreen ||
+      el.msRequestFullscreen;
+    if (!fn) return;
+    try {
+      const p = fn.call(el);
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+  }
+
+  function wake() {
+    initAudio();
+    requestFullscreen();
+  }
+
+  window.addEventListener('pointerdown', wake, { once: true });
+  window.addEventListener('touchstart', wake, { once: true });
+  window.addEventListener('keydown', wake, { once: true });
+
+  // Пытаемся сразу, но браузер, скорее всего, откажет без жеста
+  requestFullscreen();
+
+  /* ---------------- эмулятор ---------------- */
+  let nes = null;
+  let running = false;
+  let rafId = 0;
+  let lastT = 0;
+  let acc = 0;
+  const FRAME_MS = 1000 / 60.098;
+
+  function drawFrame(buf) {
+    for (let i = 0; i < buf.length; i++) {
+      out32[i] = 0xFF000000 | buf[i];
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  function loop(t) {
+    if (!running) return;
+    if (!lastT) lastT = t;
+    let dt = t - lastT;
+    lastT = t;
+    if (dt > 100) dt = 100;
+    acc += dt;
+    let guard = 0;
+    while (acc >= FRAME_MS && guard++ < 4) {
+      nes.frame();
+      acc -= FRAME_MS;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function startRom(romString) {
+    if (nes) {
+      running = false;
+      cancelAnimationFrame(rafId);
+      nes = null;
+    }
+
+    rHead = rTail = 0;
+
+    const sampleRate = audioCtx ? audioCtx.sampleRate : 44100;
+    nes = new jsnes.NES({
+      onFrame: drawFrame,
+      onAudioSample: pushSample,
+      sampleRate: sampleRate
+    });
+
+    nes.loadROM(romString);
+    running = true;
+    lastT = 0;
+    acc = 0;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /* ---------------- клавиатура + пульт Vidaa OS (Tetris 2) ---------------- */
+  const KEYMAP = {
+    // Движение и ускорение падения
+    ArrowUp: 'BUTTON_UP',          // (В Tetris 2 не используется, оставлено для меню)
+    ArrowDown: 'BUTTON_DOWN',      // Ускорить падение
+    ArrowLeft: 'BUTTON_LEFT',      // Влево
+    ArrowRight: 'BUTTON_RIGHT',    // Вправо
+
+    // Вращение фигуры
+    KeyX: 'BUTTON_A',              // Вращение по часовой
+    Space: 'BUTTON_A',
+    Enter: 'BUTTON_A',
+    NumpadEnter: 'BUTTON_A',
+    KeyZ: 'BUTTON_B',              // Вращение против часовой
+
+    // Служебные кнопки
+    ShiftLeft: 'BUTTON_START',     // Пауза
+    ShiftRight: 'BUTTON_START',
+    Backspace: 'BUTTON_START',
+    KeyC: 'BUTTON_SELECT'          // Перезапуск раунда (Tetris 2)
+  };
+
+  // Коды пульта Hisense / Vidaa OS (Tetris 2)
+  const VIDAA_KEY_MAP = {
+    13: 'BUTTON_A',                // OK — вращение по часовой
+    8: 'BUTTON_START',             // Back — пауза
+    27: 'BUTTON_START',            // Escape/Back — пауза
+    37: 'BUTTON_LEFT',
+    38: 'BUTTON_UP',
+    39: 'BUTTON_RIGHT',
+    40: 'BUTTON_DOWN',
+    415: 'BUTTON_A',               // Play — вращение по часовой
+    19: 'BUTTON_START',            // Pause — пауза
+    413: 'BUTTON_START',           // Stop — пауза
+    417: 'BUTTON_B',               // Fast Forward — вращение против часовой
+    412: 'BUTTON_A',               // Rewind — вращение по часовой (резерв)
+    10009: 'BUTTON_SELECT'         // Return / Exit — перезапуск раунда
+  };
+
+  function getButtonName(e) {
+    return KEYMAP[e.code] || VIDAA_KEY_MAP[e.keyCode];
+  }
+
+  function onKeyDown(e) {
+    const name = getButtonName(e);
+    if (!name) return;
+    e.preventDefault();
+    wake();
+    if (!nes || e.repeat) return;
+    nes.buttonDown(1, jsnes.Controller[name]);
+  }
+
+  function onKeyUp(e) {
+    const name = getButtonName(e);
+    if (!name) return;
+    e.preventDefault();
+    if (!nes) return;
+    nes.buttonUp(1, jsnes.Controller[name]);
+  }
+
+  window.addEventListener('keydown', onKeyDown, { passive: false });
+  window.addEventListener('keyup', onKeyUp, { passive: false });
+
+  window.addEventListener('blur', function () {
+    if (!nes) return;
+    [
+      'BUTTON_UP', 'BUTTON_DOWN', 'BUTTON_LEFT', 'BUTTON_RIGHT',
+      'BUTTON_A', 'BUTTON_B', 'BUTTON_START', 'BUTTON_SELECT'
+    ].forEach(function (n) {
+      nes.buttonUp(1, jsnes.Controller[n]);
+    });
+  });
+
+  /* ---------------- загрузка DandyGame.txt ---------------- */
+  function hexToBytes(text) {
+    const compact = text.replace(/\s+/g, '');
+    if (compact.length && compact.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(compact)) {
+      const out = new Uint8Array(compact.length / 2);
+      for (let i = 0; i < out.length; i++) {
+        out[i] = parseInt(compact.substr(i * 2, 2), 16);
+      }
+      return out;
+    }
+
+    const parts = text.trim().split(/\s+/);
+    const out = new Uint8Array(parts.length);
+    let n = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (p.length === 2 && /^[0-9a-fA-F]{2}$/.test(p)) {
+        out[n++] = parseInt(p, 16);
+      }
+    }
+    return out.slice(0, n);
+  }
+
+  function bytesToString(bytes) {
+    let s = '';
+    const CHUNK = 0x4000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return s;
+  }
+
+  function isNesHeader(b) {
+    return b.length > 4 &&
+      b[0] === 0x4E && b[1] === 0x45 && b[2] === 0x53 && b[3] === 0x1A;
+  }
+
+  async function loadGame() {
+    try {
+      if (typeof jsnes === 'undefined') {
+        throw new Error('jsnes не загрузился');
+      }
+
+      const res = await fetch('DandyGame.txt', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      const buf = await res.arrayBuffer();
+      let bytes = new Uint8Array(buf);
+
+      if (!isNesHeader(bytes)) {
+        const text = new TextDecoder('latin1').decode(bytes);
+        bytes = hexToBytes(text);
+      }
+
+      if (!isNesHeader(bytes)) {
+        throw new Error('DandyGame.txt не является NES ROM или hex-дампом');
+      }
+
+      startRom(bytesToString(bytes));
+    } catch (err) {
+      console.error('DandyGame load error:', err);
+    }
+  }
+
+  loadGame();
+})();
+</script>
+</body>
+</html>
